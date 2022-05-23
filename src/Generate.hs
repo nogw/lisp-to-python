@@ -219,16 +219,13 @@ generateBodyFunc ctx body' xs = do
   case body' of
     [] -> return ["()"]
     [f] -> do
-      traceM $ show f
-      traceM $ show $ canBeReturn f
-      traceM "-----"
+      traceM $ show body'
+      traceM $ show (canBeReturn f)
+      traceM "\n"
       x' <- generate ctx f
-      return $
-        xs
-          <> [ if canBeReturn f
-                 then "return " <> x'
-                 else "" <> x'
-             ]
+
+      -- check if list have some function as argument, because if nothing argument can be a function, this give Lists that haven a function
+      return $ xs <> [x']
     f : rest -> do
       body1 <- generate ctx f
       generateBodyFunc ctx rest (xs <> [body1])
@@ -268,7 +265,6 @@ generateCallFunction ctx f args = do
       args'' <- mapM (generate ctx) args'
       return $ filterName f <> "(" <> joinComma args'' <> ")"
     (funcs, args') -> do
-      traceM $ show funcs
       let body = funcs <> [List (Atom f : args')]
       List.intercalate "\n\n" <$> generateBodyFunc ctx body []
 
