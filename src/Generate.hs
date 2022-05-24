@@ -121,50 +121,17 @@ generateVariable ctx var body =
     bd <- generate ctx body
     return $ var <> " = " <> bd
 
-{-
-  CODE: (define (flip func) (lambda (arg arg1) (func arg1 arg)))
-  AST: (List [Atom "define", List [Atom "flip", Atom "func"], List [Atom "lambda", List [Atom "arg",Atom "arg1"], List [Atom "func", Atom "arg1", Atom "arg"]]])
-  EXPECT: def flip (func):
-            return lambda arg, arg1: func(arg1, arg)
-
-  CODE: ((lambda (a b) (+ (* 2 a) b)) 5 6)
-  AST: (List [List [Atom "lambda", List [Atom "a",Atom "b"], List [Atom "+", List [Atom "*",Number 2,Atom "a"], Atom "b"]]])
-  EXPECT: (lambda a, b: ((2) * (a)) + (b))(5, 6)
-
-  CODE: (define (compose f g) (lambda (arg) (f (apply g arg))))
-  AST: (List [Atom "define", List [Atom "compose", Atom "f", Atom "g"], List [Atom "lambda", List [Atom "arg"], List [Atom "f", List [Atom "apply", Atom "g", Atom "arg"]]]])
-  EXPECT: def compose (f, g):
-            return lambda arg: f(g(arg))
-
-  CODE: (define (foldr func end lst) (if (null? lst) end (func (car lst) (foldr func end (cdr lst)))))
-  AST: (List [Atom "define", List [Atom "foldr", Atom "func", Atom "end", Atom "lst"], List [Atom "if", List [Atom "null?", Atom "lst"], Atom "end", List [Atom "func", List [Atom "car", Atom "lst"], List [Atom "foldr", Atom "func", Atom "end", List [Atom "cdr", Atom "lst"]]]]])
-  EXPECT: def foldr (func, end, lst):
-            if null(lst):
-              return end
-            else:
-              return func([lst][1], foldr(func, end, [lst][1:]))
-
-  CODE: (define (mem-helper pred op) (lambda (acc next) (if (and (not acc) (pred (op next))) next acc)))
-  AST: List [Atom "define",List [Atom "mem-helper",Atom "pred",Atom "op"],List [Atom "lambda",List [Atom "acc",Atom "next"],List [Atom "if",List [Atom "and",List [Atom "not",Atom "acc"],List [Atom "pred",List [Atom "op",Atom "next"]]],Atom "next",Atom "acc"]]]
-  ECPECT(FAIL): def memhelper(pred, op):
-                  def scm_lambda_125(acc, next):
-                    if py_keyword_and(py_keyword_not(acc), pred(op(next))):
-                      return next
-                    else:
-                      return acc
--}
-
 generateLambda :: Ctx -> [Ast] -> [Ast] -> IO String
 generateLambda ctx params body =
   if canBeLambdaBody (head body)
     then do
-      body' <- mapM (generate ctx) body
-      params' <- mapM (generate ctx) params
+      body_ <- mapM (generate ctx) body
+      params_ <- mapM (generate ctx) params
       return $
         printf
           "lambda %s: %s"
-          (joinComma params')
-          (joinNewLine body')
+          (joinComma params_)
+          (joinNewLine body_)
     else generateFunction ctx "scm_lambda_125" params body
 
 {-
@@ -240,46 +207,12 @@ checkIfHasFunction ast = do
         List asts -> checkIfHasFunction asts
         _ -> checkIfHasFunction t
 
-testCheck :: IO ()
-testCheck = do
-  print $
-    checkIfHasFunction
-      [ List
-          [ Atom "define",
-            List
-              [ Atom "memq",
-                Atom "obj",
-                Atom "lst"
-              ],
-            List
-              [ Atom "fold",
-                List
-                  [ Atom "mem-helper",
-                    List
-                      [ Atom "curry",
-                        Atom "eq?",
-                        Atom "obj"
-                      ],
-                    Atom "id"
-                  ],
-                Bool False,
-                Atom "lst"
-              ]
-          ]
-      ]
-  print $
-    checkIfHasFunction
-      [ List
-          [ Atom "fold",
-            List
-              [ Atom "lambda",
-                List [Atom "x", Atom "y"],
-                List [Atom "+", Atom "x", Number 1]
-              ],
-            Number 0,
-            Atom "lst"
-          ]
-      ]
+canBeReturn :: Ast -> Bool
+canBeReturn arg =
+  case arg of
+    List [Atom "define", _, _] -> False
+    List [Atom "if", _, _, _] -> False
+    _ -> True
 
 generateBodyFunc :: Ctx -> [Ast] -> [String] -> IO [String]
 generateBodyFunc ctx body xs = do
@@ -295,13 +228,6 @@ generateBodyFunc ctx body xs = do
       body1 <- generate ctx f
       generateBodyFunc ctx rest (xs <> [body1])
 
-canBeReturn :: Ast -> Bool
-canBeReturn arg =
-  case arg of
-    List [Atom "define", _, _] -> False
-    List [Atom "if", _, _, _] -> False
-    _ -> True
-
 {-
 (define (mem-helper pred op)
   (lambda (acc next) (if (and (not acc) (pred (op next)))
@@ -314,13 +240,6 @@ List [Atom "define", List [Atom "mem-helper", Atom "pred", Atom "op"],
       List [Atom "and",
         List [Atom "not", Atom "acc"],
         List [Atom "pred", List [Atom "op",Atom "next"]]],Atom "next",Atom "acc"]]])
--}
-
-{-
-  iter args
-
-  check if is lambda, if so,
-  generate and sub name of lambda to call a function
 -}
 
 generateCallFunction :: Ctx -> String -> [Ast] -> IO String

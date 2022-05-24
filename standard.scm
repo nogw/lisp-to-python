@@ -9,8 +9,8 @@
 (define (flip func) 
   (lambda (arg arg1) (func arg1 arg)))
 
-(define (curry func arg) 
-  (lambda (arg) (apply func (cons arg (list arg1)))))
+(define (curry func arg1)  
+  (lambda (arg) (apply func (cons arg1 (list arg)))))
 
 (define (compose f g) 
   (lambda (arg) (f (apply g arg))))

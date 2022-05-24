@@ -1,12 +1,6 @@
-(define (memq obj lst) (fold (mem-helper (curry eq? obj) id) #f lst))
+# TODO 
 
-(define (null? obj) (if (eqv? obj '()) #t #f))
+(define (curry func arg1)  
+  (lambda (arg) (apply func (cons arg1 (list arg)))))
 
-(define (foldl func accum lst) 
-  (if (null? lst) 
-    accum 
-    (foldl func (func accum (car lst)) (cdr lst))))
-
-(define fold foldl)
-
-(define (length lst) (fold (lambda (x y) (+ x 1)) 0 lst))
+`(cons arg1 (list arg))` in this case I need to join the argument list and pass it to function
