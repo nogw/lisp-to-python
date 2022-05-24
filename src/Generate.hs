@@ -15,28 +15,44 @@ generateArithExpression :: Ctx -> Ast -> IO String
 generateArithExpression ctx ast = aux "" ast
   where
     aux acc ast = do
+      traceM $ show ast
       case ast of
         Number a -> return ("(" <> show a <> ")")
+        Atom a -> return ("(" <> a <> ")")
         List [Atom op, a, b] -> do
-          n1 <- aux acc a
-          n2 <- aux acc b
-          return $ "(" <> (n1 <> getOperator op <> n2) <> ")"
+          n1 <- generate ctx a
+          n2 <- generate ctx b
+          return $ "(" <> ("(" <> n1 <> ")" <> getOperator op <> "(" <> n2 <> ")") <> ")"
         List (Atom op : a : b : rest) -> do
-          n1 <- aux acc a
-          n2 <- aux acc b
-          return $ accListOfNumbers op (n1 <> getOperator op <> n2) rest
+          n1 <- generate ctx a
+          n2 <- generate ctx b
+          accListOfNumbers op ("(" <> n1 <> ")" <> getOperator op <> "(" <> n2 <> ")") rest
         _ -> return acc
-    accListOfNumbers :: String -> String -> [Ast] -> String
+    accListOfNumbers :: String -> String -> [Ast] -> IO String
     accListOfNumbers op acc ns = case ns of
       ast1 : asts -> do
         n1 <- aux acc ast1
         accListOfNumbers op ("(" <> acc <> ")" <> getOperator op <> n1) asts
-      [] -> "(" <> acc <> ")"
+      [] -> return $ "(" <> acc <> ")"
+
+{-
+Number a -> return ("(" <> show a <> ")")
+Atom a -> return ("(" <> a <> ")")
+List [Atom op, a, b] -> do
+  n1 <- aux acc a
+  n2 <- aux acc b
+  return $ "(" <> (n1 <> getOperator op <> n2) <> ")"
+List (Atom op : a : b : rest) -> do
+  n1 <- aux acc a
+  n2 <- aux acc b
+  return $ accListOfNumbers op (n1 <> getOperator op <> n2) rest
+-}
 
 testArith :: IO ()
 testArith = do
   ctx <- emptyCtx
   let expr = List [Atom "+", Number 1, Number 2, Number 3, Number 4, Number 5]
+  -- let expr = List [Atom ">", Number 1, Number 2]
   gen <- generateArithExpression ctx expr
   putStrLn "\n"
   print gen
@@ -214,18 +230,67 @@ generateFunction ctx name params body =
     body' <- do indent . joinNewLine <$> generateBodyFunc ctx body []
     return $ "def " <> filterName name <> "(" <> params' <> "):\n" <> body'
 
+checkIfHasFunction :: [Ast] -> Bool
+checkIfHasFunction ast = do
+  case ast of
+    [] -> False
+    h : t -> do
+      case h of
+        Atom at -> (at == "lambda") || checkIfHasFunction t
+        List asts -> checkIfHasFunction asts
+        _ -> checkIfHasFunction t
+
+testCheck :: IO ()
+testCheck = do
+  print $
+    checkIfHasFunction
+      [ List
+          [ Atom "define",
+            List
+              [ Atom "memq",
+                Atom "obj",
+                Atom "lst"
+              ],
+            List
+              [ Atom "fold",
+                List
+                  [ Atom "mem-helper",
+                    List
+                      [ Atom "curry",
+                        Atom "eq?",
+                        Atom "obj"
+                      ],
+                    Atom "id"
+                  ],
+                Bool False,
+                Atom "lst"
+              ]
+          ]
+      ]
+  print $
+    checkIfHasFunction
+      [ List
+          [ Atom "fold",
+            List
+              [ Atom "lambda",
+                List [Atom "x", Atom "y"],
+                List [Atom "+", Atom "x", Number 1]
+              ],
+            Number 0,
+            Atom "lst"
+          ]
+      ]
+
 generateBodyFunc :: Ctx -> [Ast] -> [String] -> IO [String]
-generateBodyFunc ctx body' xs = do
-  case body' of
+generateBodyFunc ctx body xs = do
+  case body of
     [] -> return ["()"]
     [f] -> do
-      traceM $ show body'
-      traceM $ show (canBeReturn f)
-      traceM "\n"
-      x' <- generate ctx f
+      fl <- generate ctx f
 
-      -- check if list have some function as argument, because if nothing argument can be a function, this give Lists that haven a function
-      return $ xs <> [x']
+      if canBeReturn f && not (checkIfHasFunction body)
+        then return $ xs <> ["return " <> fl]
+        else return $ xs <> [fl]
     f : rest -> do
       body1 <- generate ctx f
       generateBodyFunc ctx rest (xs <> [body1])
@@ -556,7 +621,6 @@ genPythonCodeFromFile filename =
           gAst <- mapM (generate ctx) asts
           showState ctx
           imp <- getImports ctx
-
           if not (null imp)
             then writeOutputPython $ joinNewLine (map ("import " <>) imp) <> "\n\n" <> List.intercalate "\n\n" gAst
             else writeOutputPython $ List.intercalate "\n\n" gAst
