@@ -14,8 +14,7 @@ import Text.Printf
 generateArithExpression :: Ctx -> Ast -> IO String
 generateArithExpression ctx ast = aux "" ast
   where
-    aux acc ast = do
-      traceM $ show ast
+    aux acc ast =
       case ast of
         Number a -> return ("(" <> show a <> ")")
         Atom a -> return ("(" <> a <> ")")
@@ -31,177 +30,65 @@ generateArithExpression ctx ast = aux "" ast
     accListOfNumbers :: String -> String -> [Ast] -> IO String
     accListOfNumbers op acc ns = case ns of
       ast1 : asts -> do
-        n1 <- aux acc ast1
-        accListOfNumbers op ("(" <> acc <> ")" <> getOperator op <> n1) asts
+        aux acc ast1 >>= \n -> accListOfNumbers op ("(" <> acc <> ")" <> getOperator op <> n) asts
       [] -> return $ "(" <> acc <> ")"
 
-{-
-Number a -> return ("(" <> show a <> ")")
-Atom a -> return ("(" <> a <> ")")
-List [Atom op, a, b] -> do
-  n1 <- aux acc a
-  n2 <- aux acc b
-  return $ "(" <> (n1 <> getOperator op <> n2) <> ")"
-List (Atom op : a : b : rest) -> do
-  n1 <- aux acc a
-  n2 <- aux acc b
-  return $ accListOfNumbers op (n1 <> getOperator op <> n2) rest
--}
-
-testArith :: IO ()
-testArith = do
-  ctx <- emptyCtx
-  let expr = List [Atom "+", Number 1, Number 2, Number 3, Number 4, Number 5]
-  -- let expr = List [Atom ">", Number 1, Number 2]
-  gen <- generateArithExpression ctx expr
-  putStrLn "\n"
-  print gen
-
-{-
-  AST: List [Atom "if", List [Atom ">", Number 1, Number 2], List [Atom "+", Number 1, Number 2], List [Atom "-", Number 2, Number 1]]
-  EXPECT(FAIL): if ((2) > (1)):
-            ((2) + (1))
-          else:
-            ((1) - (2))
-
-  AST: List [Atom "if", List [Atom ">", Number 10, Number 20], List [Atom "if", List [Atom "<", Number 10, Number 15], List [Atom "+", Number 10, Number 12], List [Atom "-", Number 10, Number 12]], List [Atom "-", Number 2, Number 1]]
-  EXPECT(FAIL): if (10) > (20):
-                  return if (10) < (15):
-                    return (10) + (12)
-                  else:
-                    return (10) - (12)
-                else:
-                  return (2) - (1)
--}
-
 generateIfStatement :: Ctx -> Ast -> Ast -> Ast -> IO String
-generateIfStatement ctx pred conseq alt = do
-  cond <- generate ctx pred
-  conseq' <- generate ctx conseq
-  alt' <- generate ctx alt
-  return $
-    "if " <> cond <> ":\n"
-      <> indent ("return " <> conseq')
-      <> "\nelse:\n"
-      <> indent ("return " <> alt')
-
--- printf
---   "if %s:\n%s\nelse:\n%s"
---   (generate ctx pred)
---   (indent $ "return " <> conseq')
---   (indent $ "return " <> alt')
-
-{-
-  List [Atom "define", Atom "x", Number 1]
-  x = 1
-  List [
-    Atom "define", List [Atom "f", Atom "x", Atom "y"],
-      List [Atom "define", Atom "z", List [Atom "+", Atom "x", Atom "y"]],
-      List [Atom "*", Atom "z", Atom "z"]
-    ]
-  def f (x,y):
-    z = ((x) + (y))
-    return ((z) * (z))
-  List [
-    Atom "define", List [Atom "f", Atom "x", Atom "y"],
-      List [Atom "define", Atom "z", List [Atom "+", Atom "x", Atom "y"]],
-      List [Atom "define", Atom "z1", List [Atom "-", Atom "x", Atom "y"]],
-      List [Atom "*", Atom "z", Atom "z1"]
-  ]
-  def f (x,y):
-    z = ((x) + (y))
-    z1 = ((x) - (y))
-    return ((z) * (z1))
--}
+generateIfStatement ctx cond conseq alt =
+  generate ctx cond >>= \c ->
+    generate ctx conseq >>= \cs ->
+      generate ctx alt >>= \a ->
+        return $ "if " <> c <> ":\n" <> (indent "return " <> cs) <> "\nelse:\n" <> (indent "return " <> a)
 
 generateVariable :: Ctx -> String -> Ast -> IO String
-generateVariable ctx var body =
-  -- printf "%s = %s" var (generate ctx body)
-  do
-    bd <- generate ctx body
-    return $ var <> " = " <> bd
+generateVariable ctx var body = generate ctx body >>= \b -> return $ var <> " = " <> b
 
 generateLambda :: Ctx -> [Ast] -> [Ast] -> IO String
 generateLambda ctx params body =
   if canBeLambdaBody (head body)
     then do
-      body_ <- mapM (generate ctx) body
-      params_ <- mapM (generate ctx) params
-      return $
-        printf
-          "lambda %s: %s"
-          (joinComma params_)
-          (joinNewLine body_)
-    else generateFunction ctx "scm_lambda_125" params body
-
-{-
-  CODE: (define (unfold func init pred) (if (pred init) (cons init '()) (cons init (unfold func (func init) pred))))
-  AST: List [Atom "define",List [Atom "unfold",Atom "func",Atom "init",Atom "pred"],List [Atom "if",List [Atom "pred",Atom "init"],List [Atom "cons",Atom "init",List [Atom "quote",List []]],List [Atom "cons",Atom "init",List [Atom "unfold",Atom "func",List [Atom "func",Atom "init"],Atom "pred"]]]]
-  EXPECT: def unfold (func, init, pred):
-            if pred(init):
-              return [init]
-            else:
-              return [init, unfold(func, func(init), pred)]
--}
+      b <- mapM (generate ctx) body
+      p <- mapM (generate ctx) params
+      -- is it ok to always concatenate "return"?
+      return $ "return lambda " <> joinComma p <> ": " <> joinNewLine b
+    else
+      let fn = "scm_lambda_" <> show (length params)
+       in generateFunction ctx fn params body
 
 generateCons :: Ctx -> [Ast] -> [String] -> IO String
 generateCons ctx x acc =
   case x of
-    [List (Atom "cons" : x' : x1')] -> do
-      rest <- generate ctx x'
-      generateCons ctx x1' (acc <> [rest])
-    [List [Atom "quote", List []]] -> generateCons ctx (tail x) acc
-    [List _] -> do
-      rest <- mapM (generate ctx) x
-      generateCons ctx [] $ acc <> rest
-    [Atom x] -> generateCons ctx [] (acc <> [x])
-    [] -> return $ "[" <> joinComma acc <> "]"
+    [List (Atom "cons" : x' : xs)] ->
+      generate ctx x' >>= \r -> generateCons ctx xs (acc <> [r])
+    [List [Atom "quote", List []]] ->
+      generateCons ctx (tail x) acc
+    [List _] ->
+      mapM (generate ctx) x >>= \r -> generateCons ctx [] $ acc <> r
+    [Atom x] ->
+      generateCons ctx [] (acc <> [x])
+    [] ->
+      return $ "[" <> joinComma acc <> "]"
     _ -> undefined
-
--- _ -> do
---   lst <- joinComma <$> mapM (generate ctx) x
---   return $ "[" <> lst <> "]"
 
 generateQuoteList :: Ctx -> Ast -> IO String
 generateQuoteList ctx val = case val of
-  List lst ->
-    do
-      lst' <- joinComma <$> mapM (generate ctx) lst
-      return $ "[" <> lst' <> "]"
+  List list -> mapM (generate ctx) list >>= (\l -> return $ "[" <> l <> "]") . joinComma
   _ -> undefined
-
-{-
-  CODE: (define (sum . lst) (fold + 0 lst))
-  AST: List [Atom "define",DottedList [Atom "sum"] (Atom "lst"),List [Atom "fold",Atom "+",Number 0,Atom "lst"]]
-  EXPECT: def sum(lst):
-            fold(operator.add, 0, lst)
--}
-
-{-
-  CODE: (define (f a b) (+ a b))
-  AST: List [Atom "define", List [Atom "f", Atom "a", Atom "b"], List [Atom "+", Atom "a", Atom "b"]]
-  EXPECT: def f(a, b):
-            (a) + (b)
-
-  CODE: (define (s a b c d e f g h) (+ a b c d e f g h))
-  AST: List [Atom "define",List [Atom "s",Atom "a",Atom "b",Atom "c",Atom "d",Atom "e",Atom "f",Atom "g",Atom "h"],List [Atom "+",Atom "a",Atom "b",Atom "c",Atom "d",Atom "e",Atom "f",Atom "g",Atom "h"]]
-  EXPECT: def s(a, b, c, d, e, f, g, h):
-            (((((((g) + (h) + (f)) + (e)) + (d)) + (c)) + (b)) + (a))
--}
 
 generateFunction :: Ctx -> String -> [Ast] -> [Ast] -> IO String
 generateFunction ctx name params body =
-  do
-    pushFunct name ctx
-    params' <- joinComma <$> mapM (generate ctx) params
-    body' <- do indent . joinNewLine <$> generateBodyFunc ctx body []
-    return $ "def " <> filterName name <> "(" <> params' <> "):\n" <> body'
+  addFnName name ctx
+    >> joinComma <$> mapM (generate ctx) params >>= \p ->
+      generateBodyFunc ctx body []
+        >>= (\b -> return $ "def " <> filterName name <> "(" <> p <> "):\n" <> b)
+          . indent
+          . joinNewLine
 
 checkIfHasFunction :: [Ast] -> Bool
 checkIfHasFunction ast = do
   case ast of
     [] -> False
-    h : t -> do
+    h : t ->
       case h of
         Atom at -> (at == "lambda") || checkIfHasFunction t
         List asts -> checkIfHasFunction asts
@@ -218,29 +105,14 @@ generateBodyFunc :: Ctx -> [Ast] -> [String] -> IO [String]
 generateBodyFunc ctx body xs = do
   case body of
     [] -> return ["()"]
-    [f] -> do
-      fl <- generate ctx f
-
-      if canBeReturn f && not (checkIfHasFunction body)
-        then return $ xs <> ["return " <> fl]
-        else return $ xs <> [fl]
-    f : rest -> do
-      body1 <- generate ctx f
-      generateBodyFunc ctx rest (xs <> [body1])
-
-{-
-(define (mem-helper pred op)
-  (lambda (acc next) (if (and (not acc) (pred (op next)))
-    next
-    acc)))
-
-List [Atom "define", List [Atom "mem-helper", Atom "pred", Atom "op"],
-  List [Atom "lambda", List [Atom "acc", Atom "next"],
-    List [Atom "if",
-      List [Atom "and",
-        List [Atom "not", Atom "acc"],
-        List [Atom "pred", List [Atom "op",Atom "next"]]],Atom "next",Atom "acc"]]])
--}
+    [f] ->
+      generate ctx f >>= \f' ->
+        if canBeReturn f && not (checkIfHasFunction body)
+          then return $ xs <> ["return " <> f']
+          else return $ xs <> [f']
+    f : rest ->
+      generate ctx f >>= \b ->
+        generateBodyFunc ctx rest (xs <> [b])
 
 generateCallFunction :: Ctx -> String -> [Ast] -> IO String
 generateCallFunction ctx f args = do
@@ -260,9 +132,8 @@ checkArgs s (funcs, args) =
         then checkArgs rest (funcs, args <> [a])
         else case a of
           List (Atom "lambda" : List params : body) ->
-            do
-              let fn = "scm_lambda_" <> show (length funcs)
-              checkArgs rest (funcs <> [List (Atom "define" : List (Atom fn : params) : body)], args <> [Atom fn])
+            let fn = "scm_lambda_" <> show (length funcs)
+             in checkArgs rest (funcs <> [List (Atom "define" : List (Atom fn : params) : body)], args <> [Atom fn])
           _ -> undefined
     _ -> (funcs, args)
   where
@@ -270,20 +141,6 @@ checkArgs s (funcs, args) =
     canBeUsedAsArg = \case
       List [Atom "lambda", _, _] -> False
       _ -> True
-
-{-
-  [List [Atom "foldr",List [Atom "lambda",List [Atom "x",Atom "y"],List [Atom "cons",List [Atom "func",Atom "x"],Atom "y"]],List [Atom "quote",List []],Atom "lst"]]
-
-  List [Atom "lambda",List [Atom "x",Atom "y"],List [Atom "cons",List [Atom "func",Atom "x"],Atom "y"]]
-
-  [List [Atom "foldr", Atom "lambda_gen_121",List [Atom "quote",List []],Atom "lst"]]
--}
-
-checkedArgs :: ([Ast], [Ast])
-checkedArgs = do
-  checkArgs
-    [Atom "foldr", List [Atom "lambda", List [Atom "x", Atom "y"], List [Atom "cons", List [Atom "func", Atom "x"], Atom "y"]], List [Atom "lambda", List [Atom "x", Atom "y"], List [Atom "cons", List [Atom "func", Atom "x"], Atom "y"]], List [Atom "quote", List []], Atom "lst"]
-    ([], [])
 
 parseArg :: Ctx -> Ast -> IO String
 parseArg ctx arg =
@@ -294,8 +151,7 @@ parseArg ctx arg =
       if canBeArgument $ List (Atom a : b)
         then
           if isOperator a
-            then do
-              generateCallFunction ctx (fromMaybe a (lookup a operatorsWhichCanBeArguments)) b
+            then generateCallFunction ctx (fromMaybe a (lookup a operatorsWhichCanBeArguments)) b
             else generateCallFunction ctx a b
         else generate ctx $ List (Atom a : b)
     _ -> generate ctx arg
@@ -308,9 +164,9 @@ generateList ctx f rest ast =
         Nothing -> generateCallFunction ctx f rest
         Just _ -> generateArithExpression ctx ast
     _ -> do
-      lst <- generate ctx f
+      list <- generate ctx f
       params <- joinComma <$> mapM (generate ctx) rest
-      return $ printf "(" <> lst <> ")(" <> params <> ")"
+      return $ printf "(" <> list <> ")(" <> params <> ")"
 
 generate :: Ctx -> Ast -> IO String
 generate ctx ast = case ast of
@@ -335,14 +191,14 @@ generate ctx ast = case ast of
     args <- joinComma <$> mapM (parseArg ctx) arg
     return $ name <> "(" <> args <> ")"
   List (Atom "car" : arg) -> do
-    lst <- joinComma <$> mapM (generate ctx) arg
-    return $ lst <> "[0]"
+    list <- joinComma <$> mapM (generate ctx) arg
+    return $ list <> "[0]"
   List (Atom "cdr" : arg) -> do
-    lst <- joinComma <$> mapM (generate ctx) arg
-    return $ lst <> "[1:]"
+    list <- joinComma <$> mapM (generate ctx) arg
+    return $ list <> "[1:]"
   List (Atom "list" : rest) -> do
-    lst <- joinComma <$> mapM (generate ctx) rest
-    return $ "[" <> lst <> "]"
+    list <- joinComma <$> mapM (generate ctx) rest
+    return $ "[" <> list <> "]"
   List (Atom "cons" : x : x') -> generateCons ctx [ast] []
   List (f : rest) -> generateList ctx f rest ast
   _ -> undefined
@@ -370,8 +226,7 @@ extract ctx ex = case ex of
 
 filterName :: String -> String
 filterName name' =
-  let filt_n = [x | x <- name', x `notElem` ",.?!-:;\"\'"]
-   in checkName filt_n
+  checkName [x | x <- name', x `notElem` ",.?!-:;\"\'"]
   where
     checkName name =
       if name `elem` pythonReservedKeyword
@@ -491,8 +346,8 @@ emptyCtx = do
   im <- newIORef []
   return Ctx {functions = fl, imports = im}
 
-pushFunct :: String -> Ctx -> IO ()
-pushFunct func Ctx {functions = s, ..} = do modifyIORef s (func :)
+addFnName :: String -> Ctx -> IO ()
+addFnName func Ctx {functions = s, ..} = do modifyIORef s (func :)
 
 addImport :: String -> Ctx -> IO ()
 addImport func Ctx {imports = s, ..} =
