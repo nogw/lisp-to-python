@@ -160,9 +160,12 @@ generateList :: Ctx -> Ast -> [Ast] -> Ast -> IO String
 generateList ctx f rest ast =
   case f of
     Atom f ->
-      case lookup f operators of
-        Nothing -> generateCallFunction ctx f rest
-        Just _ -> generateArithExpression ctx ast
+      if isOperator f 
+        then generateArithExpression ctx ast
+        else generateCallFunction ctx f rest
+      -- case lookup f operators of
+      --   Nothing -> generateCallFunction ctx f rest
+      --   Just _ -> generateArithExpression ctx ast
     _ -> do
       list <- generate ctx f
       params <- joinComma <$> mapM (generate ctx) rest
@@ -254,51 +257,51 @@ writeOutputPython = writeFile "testGenerate/output.py"
 
 operatorsWhichCanBeArguments :: [(String, String)]
 operatorsWhichCanBeArguments =
-  [ ("+", "operator.add"), -- ok
-    ("-", "operator.sub"), -- ok
-    ("*", "operator.mul"), -- ok
-    ("/", "operator.div"), -- ok
-    ("=", "operator.eq"), -- ok
-    ("<", "operator.lt"), -- ok
-    (">", "operator.gt"), -- ok
-    ("/=", "operator.ne"), -- ok
-    (">=", "operator.ge"), -- ok
-    ("<=", "operator.le"), -- ok
-    ("&&", "operator.and_"), -- ok
-    ("||", "operator.or_"), -- ok
-    ("eq?", "operator.eq"), -- ok
-    ("eqv?", "operator.eq"), -- ok
-    ("equal?", "operator.eq") -- ok
+  [ ("+", "operator.add"), 
+    ("-", "operator.sub"), 
+    ("*", "operator.mul"), 
+    ("/", "operator.div"), 
+    ("=", "operator.eq"), 
+    ("<", "operator.lt"), 
+    (">", "operator.gt"), 
+    ("/=", "operator.ne"), 
+    (">=", "operator.ge"), 
+    ("<=", "operator.le"), 
+    ("&&", "operator.and_"), 
+    ("||", "operator.or_"), 
+    ("eq?", "operator.eq"), 
+    ("eqv?", "operator.eq"), 
+    ("equal?", "operator.eq") 
   ]
 
 operators :: [(String, String)]
 operators =
-  [ ("+", "+"), -- ok
-    ("-", "-"), -- ok
-    ("*", "*"), -- ok
-    ("/", "/"), -- ok
-    ("mod", "%"), -- ok / partial
-    ("quotient", "//"), -- ok
-    ("remainder", "%"), -- ok / partial
-    ("=", "=="), -- ok
-    ("<", "<"), -- ok
-    (">", ">"), -- ok
-    ("/=", "/="), -- ok
-    (">=", ">="), -- ok
-    ("<=", "<="), -- ok
-    ("&&", "&&"), -- ok
-    ("||", "||"), -- ok
-    ("string=?", "=="), -- ok
-    ("string<?", "<"), -- ok
-    ("string>?", ">"), -- ok
-    ("string<=?", "<="), -- ok
-    ("string>=?", ">="), -- ok
+  [ ("+", "+"), 
+    ("-", "-"), 
+    ("*", "*"), 
+    ("/", "/"), 
+    ("mod", "%"),
+    ("quotient", "//"), 
+    ("remainder", "%"),
+    ("=", "=="), 
+    ("<", "<"), 
+    (">", ">"), 
+    ("/=", "/="), 
+    (">=", ">="), 
+    ("<=", "<="), 
+    ("&&", "&&"), 
+    ("||", "||"), 
+    ("string=?", "=="), 
+    ("string<?", "<"), 
+    ("string>?", ">"), 
+    ("string<=?", "<="), 
+    ("string>=?", ">="), 
     ("car", "car"),
     ("cdr", "cdr"),
     ("cons", "cons"),
-    ("eq?", "=="), -- ok / partial
-    ("eqv?", "=="), -- ok / partial
-    ("equal?", "==") -- ok / partial
+    ("eq?", "=="),
+    ("eqv?", "=="),
+    ("equal?", "==")
   ]
 
 pythonReservedKeyword :: [String]

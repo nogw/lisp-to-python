@@ -56,3 +56,8 @@
 
 (define (map func lst)      (foldr (lambda (x y) (cons (func x) y)) '() lst))
 (define (filter pred lst)   (foldr (lambda (x y) (if (pred x) (cons x y) y)) '() lst))
+
+(define (fib n)
+  (if (<= n 2)
+    1
+    (+ (fib (- n 1)) (fib (- n 2)))))

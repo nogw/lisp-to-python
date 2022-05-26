@@ -139,3 +139,9 @@ def filter(pred, lst):
       return y
   
   return foldr(scm_lambda_0, [], lst)
+
+def fib(n):
+  if ((n)<=(2)):
+    return 1
+  else:
+    return ((fib(((n)-(1))))+(fib(((n)-(2)))))
